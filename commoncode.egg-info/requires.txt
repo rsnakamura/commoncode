@@ -1,0 +1,5 @@
+pudb
+mock
+nose
+sphinx
+sphinxcontrib-plantuml

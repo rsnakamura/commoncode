@@ -1,0 +1,24 @@
+Common Code
+===========
+
+
+
+This is a place to gather common code that seems to be useful for more than one project. To use it you should install it, but it changes often so use `pip -e .` or `python setup.py develop` instead of install. Also, because it has plotting (and particularly kde plotting) there are the heavy requirements of `numpy`, `scipy`, and `matplotlib`. `scipy` and `matplotlib` both require that `numpy` is installed before they are. Also `scipy` seems to break using ``easy_install`` if you are in a `virtualenv` so use `pip` instead.
+
+Auto-Generated Documentation
+----------------------------
+
+These are the documents created from the source files.
+
+
+.. toctree::
+   :maxdepth: 1
+
+   The Commons <commons.rst>
+   Index Builder <index_builder.rst>
+
+.. toctree::
+   :maxdepth: 1
+
+
+

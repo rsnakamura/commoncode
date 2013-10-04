@@ -1,0 +1,519 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>The Commons &mdash; AP Command 2013.08.15 documentation</title>
+    
+    <link rel="stylesheet" href="_static/haiku.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="_static/print.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '2013.08.15',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="_static/theme_extras.js"></script>
+    <link rel="top" title="AP Command 2013.08.15 documentation" href="index.html" />
+    <link rel="next" title="commoncode.commons.PlotSetup" href="api/commoncode.commons.PlotSetup.html" />
+    <link rel="prev" title="Common Code" href="index.html" /> 
+  </head>
+  <body>
+      <div class="header"><h1 class="heading"><a href="index.html">
+          <span>Commoncode Documentation</span></a></h1>
+        <h2 class="heading"><span>The Commons</span></h2>
+      </div>
+      <div class="topnav">
+      
+        <p>
+        «&#160;&#160;<a href="index.html">Common Code</a>
+        &#160;&#160;::&#160;&#160;
+    <a href="_sources/commons.txt"
+           rel="nofollow">Show Source</a>
+        &#160;&#160;::&#160;&#160;
+        <a class="uplink" href="index.html">Contents</a>
+        &#160;&#160;::&#160;&#160;
+        <a href="api/commoncode.commons.PlotSetup.html">commoncode.commons.PlotSetup</a>&#160;&#160;»
+        </p>
+
+      </div>
+      <div class="content">
+        
+        
+  <div class="section" id="the-commons">
+<h1>The Commons<a class="headerlink" href="#the-commons" title="Permalink to this headline">¶</a></h1>
+<p>This is a module to put code shared by the other probability modules.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># python standard library</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">multiprocessing</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="c"># third party</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="kn">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">numpy</span>
+<span class="kn">from</span> <span class="nn">scipy.stats</span> <span class="kn">import</span> <span class="n">gaussian_kde</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">INCREMENT</span> <span class="o">=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<div class="section" id="data-collections">
+<h2>Data Collections<a class="headerlink" href="#data-collections" title="Permalink to this headline">¶</a></h2>
+<p>This is a place to hold collections for data.</p>
+<div class="highlight-python"><pre>DataTuple = namedtuple('DataTuple', 'probability exponent range elapsed'.sp
+lit())</pre>
+</div>
+<div class="highlight-python"><pre>def generate_flips(trials, collection_size=4):
+    """
+    Generates lists of random 0's or 1s
+
+    :yield: count of random 1s generated in collection_size flips
+    """
+    for trial in xrange(trials):
+        yield sum((random.randint(0,1) for flip in xrange(collection_size))
+)
+
+def optimize_trials(max_exponent, desired_count=3,
+                    thread_count=10, high_percentile=95,
+                    low_percentile=5, tolerance=0.01):
+    queue = multiprocessing.Queue()
+    start_time = time.time()
+    for exponent in xrange(1, max_exponent + 1):
+        trials = 10**exponent
+        threads = []
+        for t in xrange(thread_count):
+            thread = multiprocessing.Process(target=get_probability,
+                                             kwargs={'trials':trials,
+                                                     'desired_heads':desire
+d_count,
+                                                     'queue':queue})
+            threads.append(thread)
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        data = []
+        while not queue.empty():
+            data.append(queue.get())
+        percentile_range = (numpy.percentile(data, high_percentile)-
+                            numpy.percentile(data, low_percentile))
+        if percentile_range &lt;= tolerance:
+            return DataTuple(probability = numpy.median(data),
+                             exponent=exponent,
+                             range=percentile_range,
+                             elapsed=time.time()-start_time)
+
+    return DataTuple(probability = numpy.median(data),
+                        exponent = exponent,
+                        range = percentile_range,
+                        elapsed = time.time()-start_time)</pre>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">get_probability</span><span class="p">(</span><span class="n">trials</span><span class="p">,</span> <span class="n">desired_heads</span><span class="p">,</span> <span class="n">queue</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="n">flips</span> <span class="o">=</span> <span class="n">generate_flips</span><span class="p">(</span><span class="n">trials</span><span class="o">=</span><span class="n">trials</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">queue</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">INCREMENT</span> <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">flips</span> <span class="k">if</span> <span class="n">count</span><span class="o">==</span><span class="n">desired_heads</span><span class="p">)</span>
+<span class="o">/</span><span class="nb">float</span><span class="p">(</span><span class="n">trials</span><span class="p">))</span>
+        <span class="k">return</span>
+    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">INCREMENT</span> <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">flips</span> <span class="k">if</span> <span class="n">count</span><span class="o">==</span><span class="n">desired_heads</span><span class="p">)</span><span class="o">/</span><span class="nb">float</span><span class="p">(</span>
+<span class="n">trials</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="plots">
+<h2>Plots<a class="headerlink" href="#plots" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">PLOT_FOLDER</span> <span class="o">=</span> <span class="s">&#39;figures&#39;</span>
+</pre></div>
+</div>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="api/commoncode.commons.PlotSetup.html#commoncode.commons.PlotSetup" title="commoncode.commons.PlotSetup"><tt class="xref py py-obj docutils literal"><span class="pre">PlotSetup</span></tt></a>([label,&nbsp;title,&nbsp;xlabel,&nbsp;ylabel,&nbsp;...])</td>
+<td>A Context manager for plotting functions</td>
+</tr>
+<tr class="row-even"><td><a class="reference internal" href="api/commoncode.commons.PlotSetup.__enter__.html#commoncode.commons.PlotSetup.__enter__" title="commoncode.commons.PlotSetup.__enter__"><tt class="xref py py-obj docutils literal"><span class="pre">PlotSetup.__enter__</span></tt></a>()</td>
+<td>Does the common setup for the plotters</td>
+</tr>
+<tr class="row-odd"><td><a class="reference internal" href="api/commoncode.commons.PlotSetup.__exit__.html#commoncode.commons.PlotSetup.__exit__" title="commoncode.commons.PlotSetup.__exit__"><tt class="xref py py-obj docutils literal"><span class="pre">PlotSetup.__exit__</span></tt></a>(type,&nbsp;value,&nbsp;traceback)</td>
+<td>creates the xlabel, legend, sets xlim and saves the figure to a file</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PlotSetup</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    A Context manager for plotting functions</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+                 <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+                 <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;plot&#39;</span><span class="p">,</span> <span class="n">file_type</span><span class="o">=</span><span class="s">&#39;png&#39;</span><span class="p">,</span> <span class="n">output_folder</span><span class="o">=</span><span class="n">PLOT_FOLDER</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        SetupPlot constructor</span>
+
+<span class="sd">        :param:</span>
+
+<span class="sd">         - `title`: title for the plot</span>
+<span class="sd">         - `label`: string used to create output filename</span>
+<span class="sd">         - `xlabel`: label for the x-axis</span>
+<span class="sd">         - `ylabel`: label for the y-axis</span>
+<span class="sd">         - `xlim`: min and max for the x-axis</span>
+<span class="sd">         - `plot_type`: label for filename</span>
+<span class="sd">         - `plot_folder`: sub-folder for output file</span>
+<span class="sd">         - `axe`: existing axis to use instead of creating a new one</span>
+<span class="sd">         - `figure`: existing figure to use</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xlim</span> <span class="o">=</span> <span class="n">xlim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="n">title</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label</span> <span class="o">=</span> <span class="n">label</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xlabel</span> <span class="o">=</span> <span class="n">xlabel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ylabel</span> <span class="o">=</span> <span class="n">ylabel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">plot_type</span> <span class="o">=</span> <span class="n">plot_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">legend_location</span> <span class="o">=</span> <span class="n">legend_location</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_folder</span> <span class="o">=</span> <span class="n">output_folder</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_figure</span> <span class="o">=</span> <span class="n">figure</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_axe</span> <span class="o">=</span> <span class="n">axe</span>
+        <span class="k">return</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">axe</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The current axis for plotting</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_axe</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="c"># gca : get current axis (matplotlib is surprisingly unfriendly)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_axe</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">figure</span><span class="o">.</span><span class="n">gca</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_axe</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">figure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        matplotlib.pyplot figure for the axis</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_figure</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_figure</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_figure</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Output path for the file</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="s">&#39;{0}_{1}.png&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">plot_type</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">PLOT_FOLDER</span><span class="p">,</span> <span class="n">filename</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span>
+
+
+    <span class="k">def</span> <span class="nf">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Does the common setup for the plotters</span>
+
+<span class="sd">        :postcondition: figure, axe exist</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">title</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        creates the xlabel, legend, sets xlim and saves the figure to a file</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">xlabel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ylabel</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">xlim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">xlim</span><span class="p">)</span>
+
+        <span class="c"># boxplot can&#39;t set labels so this will complain</span>
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s">&#39;ignore&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">legend_location</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">figure</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">return</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">plot_hline</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">plot_label</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+               <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+               <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    plot the hline</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `plot_label`: prefix for file_name</span>
+<span class="sd">     - `y`: height of horizontal line</span>
+<span class="sd">     - `xlabel`: label for the x-axis</span>
+<span class="sd">     - `title`: title for the plot</span>
+<span class="sd">     - `xlim`: min and max x-axis values</span>
+
+<span class="sd">    :postcondition: figures/&lt;label&gt;_hline.png is a plot of data</span>
+
+<span class="sd">    :return: PlotSetup</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;hline&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">plot_vline</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">plot_label</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+               <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+               <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    plot the hline</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `plot_label`: prefix for file_name</span>
+<span class="sd">     - `x`: x-axis location of line</span>
+<span class="sd">     - `xlabel`: label for the x-axis</span>
+<span class="sd">     - `title`: title for the plot</span>
+
+<span class="sd">    :postcondition: figures/&lt;label&gt;_vline.png is a plot of data</span>
+
+<span class="sd">    :return: PlotSetup</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;vline&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">plot_histogram</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">plot_label</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                   <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+                   <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    plot the data on a histogram</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `plot_label`: prefix for file_name</span>
+<span class="sd">     - `data`: collection of data</span>
+<span class="sd">     - `xlabel`: label for the x-axis</span>
+<span class="sd">     - `title`: title for the plot</span>
+<span class="sd">     - `xlim`: min and max x-axis values</span>
+
+<span class="sd">    :postcondition: figures/&lt;label&gt;_histogram.png is a plot of data</span>
+
+<span class="sd">    :return: PlotSetup</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">xlim</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">xlim</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span> <span class="nb">max</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;histogram&#39;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="n">xlabel</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="n">xlim</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">numpy</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">label</span><span class="o">=</span><span class="s">&#39;median&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;FireBrick&#39;</span><span class="p">)</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">numpy</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">label</span><span class="o">=</span><span class="s">&#39;mean&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;DodgerBlue&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">plot_line</span><span class="p">(</span><span class="n">x_data</span><span class="p">,</span> <span class="n">y_data</span><span class="p">,</span> <span class="n">plot_label</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+             <span class="n">ylabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+                   <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    plot the data as a line</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `plot_label`: label for filename</span>
+<span class="sd">     - `data`: collection of data</span>
+<span class="sd">     - `xlabel`: label for the x-axis</span>
+<span class="sd">     - `title`: title for the plot</span>
+<span class="sd">     - `xlim`: min and max x-axis values</span>
+
+<span class="sd">    :postcondition: figures/&lt;label&gt;_cdf.png is a plot of data</span>
+
+<span class="sd">    :return: PlotSetup</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span> <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;line&#39;</span><span class="p">,</span>
+                   <span class="n">axe</span><span class="o">=</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span>
+                   <span class="n">xlabel</span><span class="o">=</span><span class="n">xlabel</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="n">xlim</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="n">ylabel</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_data</span><span class="p">,</span> <span class="n">y_data</span><span class="p">,</span>  <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">plot_cdf</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">plot_label</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+             <span class="n">ylabel</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+                   <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    plot the data as a Cumulative Distribuiton</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `plot_label`: label for filename</span>
+<span class="sd">     - `data`: collection of data</span>
+<span class="sd">     - `xlabel`: label for the x-axis</span>
+<span class="sd">     - `title`: title for the plot</span>
+<span class="sd">     - `xlim`: min and max x-axis values</span>
+
+<span class="sd">    :postcondition: figures/&lt;label&gt;_cdf.png is a plot of data</span>
+
+<span class="sd">    :return: PlotSetup</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c">#if xlim is None:</span>
+    <span class="c">#    xlim = (min(0, min(data)), max(data))</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span> <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;cdf&#39;</span><span class="p">,</span>
+                   <span class="n">axe</span><span class="o">=</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span>
+                   <span class="n">xlabel</span><span class="o">=</span><span class="n">xlabel</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="n">xlim</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="n">ylabel</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)))</span><span class="o">/</span><span class="nb">float</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>  <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># this will run forever, don&#39;t use it if large trials</span>
+<span class="k">def</span> <span class="nf">plot_kde</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">plot_label</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+             <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+             <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plots a kernel density estimate</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">xlim</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">xlim</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span> <span class="nb">max</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">PlotSetup</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">,</span> <span class="n">xlabel</span><span class="o">=</span><span class="n">xlabel</span><span class="p">,</span>
+                   <span class="n">axe</span><span class="o">=</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span> <span class="n">legend_location</span><span class="o">=</span><span class="n">legend_location</span><span class="p">,</span>
+                   <span class="n">xlim</span><span class="o">=</span><span class="n">xlim</span><span class="p">,</span> <span class="n">plot_type</span><span class="o">=</span><span class="s">&#39;kde&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">plotter</span><span class="p">:</span>
+        <span class="n">kde</span> <span class="o">=</span> <span class="n">gaussian_kde</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="n">plotter</span><span class="o">.</span><span class="n">axe</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">kde</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plotter</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">outcome</span><span class="p">(</span><span class="n">thing_observed</span><span class="p">,</span> <span class="n">amount_observed</span><span class="p">,</span> <span class="n">probability</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">plot_label</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Prints a summary and plots the data</span>
+
+<span class="sd">    :param:</span>
+
+<span class="sd">     - `thing_observed`: A descriptive name of what you are calculating the probability for</span>
+<span class="sd">     - `amount_observed`: What was the original value seen in the experiment?</span>
+<span class="sd">     - `probability`: What was the simulated probability of the thing observed?</span>
+<span class="sd">     - `title`: A descriptive title for the output</span>
+<span class="sd">     - `data`: The simulated trial data</span>
+<span class="sd">     - `plot_label`: A label to give the plot-filenames</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">print</span> <span class="s">&quot;**Observed {0}:** {1}</span><span class="se">\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">thing_observed</span><span class="p">,</span> <span class="n">amount_observed</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;**Probability of {0} by chance:** {1:.2f}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">thing_observed</span><span class="p">,</span> <span class="n">probability</span><span class="p">)</span>
+    <span class="k">print</span>
+
+    <span class="n">summary</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">title</span><span class="p">)</span>
+
+    <span class="n">label</span> <span class="o">=</span> <span class="s">&quot;Original {0}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">thing_observed</span><span class="p">)</span>
+    <span class="n">threshold</span> <span class="o">=</span> <span class="n">amount_observed</span>
+
+    <span class="n">hline</span> <span class="o">=</span> <span class="n">plot_hline</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">probability</span><span class="p">,</span>
+                       <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                       <span class="n">color</span><span class="o">=</span><span class="s">&#39;FireBrick&#39;</span><span class="p">,</span>
+                       <span class="n">label</span><span class="o">=</span><span class="s">&#39;Probability&#39;</span><span class="p">)</span>
+
+    <span class="n">vline</span> <span class="o">=</span> <span class="n">plot_vline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
+                       <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                       <span class="n">axe</span><span class="o">=</span><span class="n">hline</span><span class="o">.</span><span class="n">axe</span><span class="p">,</span>
+                       <span class="n">figure</span><span class="o">=</span><span class="n">hline</span><span class="o">.</span><span class="n">figure</span><span class="p">,</span>
+                       <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
+
+    <span class="n">histogram</span> <span class="o">=</span> <span class="n">plot_histogram</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                           <span class="n">axe</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">axe</span><span class="p">,</span>
+                           <span class="n">figure</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">figure</span><span class="p">,</span>
+                           <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                           <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;Count&#39;</span><span class="p">,</span>
+                           <span class="n">normed</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                           <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">,</span>
+                           <span class="n">histtype</span><span class="o">=</span><span class="s">&#39;stepfilled&#39;</span><span class="p">,</span>
+                           <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                           <span class="n">bins</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
+                           <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">)</span>
+
+    <span class="k">print</span> <span class="s">&quot;.. figure:: &quot;</span> <span class="o">+</span> <span class="n">histogram</span><span class="o">.</span><span class="n">path</span>
+    <span class="n">vline</span> <span class="o">=</span> <span class="n">plot_vline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="mi">1</span><span class="o">-</span><span class="n">probability</span><span class="p">,</span> <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                       <span class="n">label</span><span class="o">=</span><span class="s">&#39;Probability of {0}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">thing_observed</span><span class="p">),</span>
+                       <span class="n">color</span><span class="o">=</span><span class="s">&quot;g&quot;</span><span class="p">)</span>
+
+    <span class="n">hline</span> <span class="o">=</span> <span class="n">plot_hline</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span> <span class="n">axe</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">axe</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">figure</span><span class="p">,</span>
+                        <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                        <span class="n">color</span><span class="o">=</span><span class="s">&#39;FireBrick&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="n">cdf</span> <span class="o">=</span> <span class="n">plot_cdf</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                   <span class="n">axe</span><span class="o">=</span><span class="n">hline</span><span class="o">.</span><span class="n">axe</span><span class="p">,</span>
+                   <span class="n">figure</span><span class="o">=</span><span class="n">hline</span><span class="o">.</span><span class="n">figure</span><span class="p">,</span>
+                   <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                   <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper left&#39;</span><span class="p">,</span>
+                   <span class="n">xlabel</span><span class="o">=</span><span class="s">&#39;Fraction&#39;</span><span class="p">,</span>
+                   <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">)</span>
+
+    <span class="k">print</span> <span class="s">&quot;.. figure:: &quot;</span> <span class="o">+</span> <span class="n">cdf</span><span class="o">.</span><span class="n">path</span>
+
+    <span class="n">vline</span> <span class="o">=</span> <span class="n">plot_vline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
+                       <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                       <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                       <span class="n">color</span><span class="o">=</span><span class="s">&#39;FireBrick&#39;</span><span class="p">)</span>
+    <span class="n">boxplot</span> <span class="o">=</span> <span class="n">plot_boxplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                           <span class="n">legend_location</span><span class="o">=</span><span class="s">&#39;upper left&#39;</span><span class="p">,</span>
+                           <span class="n">axe</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">axe</span><span class="p">,</span>
+                           <span class="n">figure</span><span class="o">=</span><span class="n">vline</span><span class="o">.</span><span class="n">figure</span><span class="p">,</span>
+                           <span class="n">plot_label</span><span class="o">=</span><span class="n">plot_label</span><span class="p">,</span>
+                           <span class="n">title</span><span class="o">=</span><span class="n">title</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;.. figure:: &quot;</span> <span class="o">+</span> <span class="n">boxplot</span><span class="o">.</span><span class="n">path</span>
+    <span class="k">return</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="timing">
+<h2>Timing<a class="headerlink" href="#timing" title="Permalink to this headline">¶</a></h2>
+<p>Code to help with figuring out which code needs optimizing.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">elapsed_time</span><span class="p">(</span><span class="n">function</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_function</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">outcome</span> <span class="o">=</span> <span class="n">function</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">print</span> <span class="s">&quot;Elapsed Time: {0} Seconds&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">outcome</span>
+    <span class="k">return</span> <span class="n">_function</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+      </div>
+      <div class="bottomnav">
+
+      
+        <p>
+        «&#160;&#160;<a href="index.html">Common Code</a>
+        &#160;&#160;::&#160;&#160;
+    <a href="_sources/commons.txt"
+           rel="nofollow">Show Source</a>
+        &#160;&#160;::&#160;&#160;
+        <a class="uplink" href="index.html">Contents</a>
+        &#160;&#160;::&#160;&#160;
+        <a href="api/commoncode.commons.PlotSetup.html">commoncode.commons.PlotSetup</a>&#160;&#160;»
+        </p>
+
+      </div>
+
+    <div class="footer">
+        &copy; Copyright 2013, russelln.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b2.
+    </div>
+  </body>
+</html>

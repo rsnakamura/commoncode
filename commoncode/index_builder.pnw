@@ -1,0 +1,213 @@
+Index Builder
+=============
+<<name='imports', echo=False>>=
+# python standard library
+import os
+import string
+@
+<<name='constants', echo=False>>=
+RST_EXTENSION = '.rst'
+INDEX = 'index.rst'
+NEWLINE = '\n'
+TOCTREE = NEWLINE + '.. toctree::'
+MAXDEPTH = '   :maxdepth: {0}' + NEWLINE
+HEADER = TOCTREE + NEWLINE + MAXDEPTH
+CONTENTS = '   {0} <{1}>'
+@
+.. currentmodule:: commoncode.index_builder
+
+.. _index-builder-introduction:
+Introduction
+------------
+
+To try and ease the building of the Table of Contents for folders once the modules start exploding (which they inevitably do) they will be auto-generated. To do so the following two assumptions will be made:
+
+    #. Any file with the extension `.rst` that is not `index.rst` should be included in the `index.rst` in the same folder
+
+    #. Any folder in the same directory that has an `index.rst` file should include the sub-folder `index.rst`
+
+    #. The first non-empty line of each included file should be used as the displayed name in the table of contents
+
+.. note:: This means that if any sub-folder does not have an `index.rst` file then its sub-folders will not be included.
+
+The Headline Grabber
+--------------------
+
+Since the convention for creating tables of contents is to use the form::
+
+    pretty name <filename>
+
+The first non-empty line of the included files will be used as the `pretty name`.
+
+.. autosummary::
+   :toctree: api
+
+    grab_headline
+
+<<name='grab_headline', echo=False>>=
+def grab_headline(filename):
+    """
+    A convenience function to grab the first non-empty line
+
+    :param:
+
+     - `filename`: path to a file reachable from this directory
+
+    :return: First non-empty line stripped (or None if all are empty)
+    """
+    with open(filename) as f:
+        for line in f:
+            if len(line.strip()):
+                return line.strip()
+@
+
+The Toctree Creator
+-------------------
+
+This function will generate a toctree by applying the :ref:`assumptions <index-builder-introduction>` mentioned above. To be safe it will add an empty line above and below the output. For this to work the weaving code will need to turn off echoing (and wrappnig) and using 'sphinx' for the results::
+
+    <<name='example', echo=False, wrap=False, results='sphinx'>>=
+    create_toctree(maxdepth=1)
+    @
+
+.. autosummary::
+   :toctree: api
+
+   create_toctree
+
+<<name='create_toctree', echo=False, wrap=False>>=
+def create_toctree(maxdepth=1, subfolders=None, add_headers=False):
+    """
+    Sends a toctree to standard out
+
+    :param:
+
+     - `maxdepth`: the depth for the tree (1=module, 2=headings, etc.)
+     - `subfolders`: subfolders to add (adds all if None)
+     - `add_folders`: use folder names to separate sub-folders
+    """
+    exists = os.path.exists
+    join = os.path.join
+    
+    contents = os.listdir(os.getcwd())
+    filenames = (name for name in contents if name.endswith(RST_EXTENSION)
+                 and name != INDEX)
+
+    print HEADER.format(maxdepth)
+
+    for filename in filenames:
+        pretty_name = grab_headline(filename)
+        print CONTENTS.format(pretty_name, filename)
+
+    subfolder_toctree(maxdepth, subfolders, add_headers)
+    print
+    return
+@
+Subfolder Toctree
+-----------------
+
+For sub-folders there are different cases. I think most of the time it is easiest just to grab them all up, but often it is more meaningful to add commentary to the indices which will require that they be grabbed individually (here is where use-cases might be helpful).
+
+.. autosummary::
+   :toctree: api
+
+   subfolder_toctree
+
+<<name='create_subfolder_toctree', echo=False>>=
+def subfolder_toctree(maxdepth=1, subfolders=None, add_headers=False):
+    """
+    Creates the toctree for sub-folder indices
+
+    :param:
+
+     - `maxdepth`: Level of sub-headings to include
+     - `subfolders`: iterable of sub-folders with index.rst
+     - `add_headers`: True- use folder names as separators
+    """
+    exists = os.path.exists
+    join = os.path.join
+    
+    contents = os.listdir(os.getcwd())
+
+    if subfolders is None and add_headers:
+        name_indices = ((name, join(name, INDEX)) for name in contents if exists(join(name, INDEX)))
+        for name, index in name_indices:
+            print name + ":"
+            print HEADER.format(maxdepth)
+            pretty_name = grab_headline(index)
+            print CONTENTS.format(pretty_name, index)
+        return
+    
+    print HEADER.format(maxdepth)
+    if subfolders is not None:
+        sub_indices = (join(subfolder, INDEX) for subfolder in subfolders)
+    else:
+        sub_indices = (join(name, INDEX) for name in contents if exists(join(name, INDEX)))
+        for sub_index in sub_indices:
+            pretty_name = grab_headline(sub_index)
+            print CONTENTS.format(pretty_name, sub_index)
+    
+    return
+@
+<<name='test_imports', echo=False>>=
+# python standard library
+import unittest
+from StringIO import StringIO
+
+# third-party
+from mock import mock_open, patch, call, MagicMock
+@
+<<name='TestIndexBuilder', echo=False>>=
+class TestIndexBuilder(unittest.TestCase):
+    def setUp(self):
+        self.headline = 'Hummus Cheese'
+        self.test_string = '''
+
+
+{0}
+-------------
+
+        Now is the winter of our discontent,
+        Made glourious summer by this Son of York.
+        '''.format(self.headline)
+        self.open_mock = MagicMock(name='open_mock')
+        self.file_mock = MagicMock(spec=file, name='file_mock')
+        self.open_mock.return_value = self.file_mock
+        self.file_mock.__enter__.return_value = StringIO(self.test_string)
+        self.lines = {'ummagumma':StringIO('AAAA'),
+                      'aoeu':StringIO('BBBB')}
+        return
+
+    def test_grab_headline(self):
+        """
+        Does it grab the headline?
+        """        
+        open_name = '__builtin__.open'
+        with patch(open_name, self.open_mock):
+            filename = 'ummagumma'
+            grabbed = grab_headline(filename)
+            try:
+                self.open_mock.assert_called_with(filename)
+            except AssertionError as error:
+                print self.open_mock.mock_calls
+                raise
+            self.assertEqual(self.headline, grabbed)
+
+        empty_string = """
+
+
+
+
+        
+        """
+        self.file_mock.__enter__.return_value = StringIO(empty_string)
+        with patch(open_name, self.open_mock):
+            self.assertIsNone(grab_headline('aoeusnth'))
+        return
+
+@
+<%
+for case in (TestIndexBuilder, ):
+    suite = unittest.TestLoader().loadTestsFromTestCase(case)    
+    unittest.TextTestRunner(verbosity=2).run(suite)
+%>

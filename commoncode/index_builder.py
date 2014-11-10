@@ -42,7 +42,7 @@ def create_toctree(maxdepth=1, subfolders=None, add_headers=False):
     exists = os.path.exists
     join = os.path.join
     
-    contents = os.listdir(os.getcwd())
+    contents = sorted(os.listdir(os.getcwd()))
     filenames = (name for name in contents if name.endswith(RST_EXTENSION)
                  and name != INDEX)
 
@@ -70,7 +70,7 @@ def subfolder_toctree(maxdepth=1, subfolders=None, add_headers=False):
     exists = os.path.exists
     join = os.path.join
     
-    contents = os.listdir(os.getcwd())
+    contents = sorted(os.listdir(os.getcwd()))
 
     if subfolders is None and add_headers:
         name_indices = ((name, join(name, INDEX)) for name in contents if exists(join(name, INDEX)))
@@ -98,7 +98,10 @@ import unittest
 from StringIO import StringIO
 
 # third-party
-from mock import mock_open, patch, call, MagicMock
+try:
+    from mock import mock_open, patch, call, MagicMock
+except ImportError:
+    pass    
 
 
 class TestIndexBuilder(unittest.TestCase):

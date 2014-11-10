@@ -1,4 +1,6 @@
+setup.py
 commoncode/__init__.py
+commoncode/code_graphs.py
 commoncode/commons.py
 commoncode/conf.py
 commoncode/index.py
@@ -6,5 +8,4 @@ commoncode/index_builder.py
 commoncode.egg-info/PKG-INFO
 commoncode.egg-info/SOURCES.txt
 commoncode.egg-info/dependency_links.txt
-commoncode.egg-info/requires.txt
 commoncode.egg-info/top_level.txt

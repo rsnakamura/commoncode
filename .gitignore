@@ -1,3 +1,14 @@
+**/api/
+build/
+*.py[cod]
+*egg-info/
+dist/
+**/cache/
+*~
+*.cover
+*.log
+.ipynb_checkpoints/
 __pycache__
-*.egg-info/
-*.pyc
+*.pkl
+.pdf
+large_data/
